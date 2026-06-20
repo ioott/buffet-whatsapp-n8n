@@ -18,6 +18,11 @@ In high-intent customer service environments (such as event and party venues), r
 
 The system handles non-linear customer conversations, extracts essential event metrics, interfaces with a relational database for CRM management, calculates precise dynamic quotes via a mathematical script engine, and drives conversions through automated re-engagement funnels.
 
+### 🎥 Agent Demo
+Click on the image below to watch a demonstration of the agent in action:
+
+[![Sales Agent Demonstration](DEMO-Thumbnail.png)](https://drive.google.com/file/d/1m-ydtz7-_EZp945I9MuK_nta6YZSYvpd/view?usp=sharing)
+
 ### 📂 Repository Directory Structure
 The repository is structured logically to separate the orchestration layer, database schemas, prompt engineering assets, and DevOps scripts:
 
@@ -138,6 +143,11 @@ To prevent workflow bloating and enforce the Single Responsibility Principle, th
 Em ambientes de atendimento ao cliente com alta intenção de compra (como o setor de festas e eventos), a demora na resposta impacta diretamente a taxa de conversão. Este projeto substitui respostas automáticas estáticas e limitadas por um Agente de Vendas com IA avançado e autônomo.
 
 O sistema gerencia conversas não-lineares, extrai métricas essenciais do evento, faz interface com um banco de dados relacional (CRM), calcula orçamentos complexos por meio de scripts determinísticos e impulsiona as vendas através de funis automatizados de reengajamento.
+
+### 🎥 Demonstração do Agente
+Clique na imagem abaixo para assistir à demonstração do agente em funcionamento:
+
+[![Demonstração do Agente de Vendas](DEMO-Thumbnail.png)](https://drive.google.com/file/d/1m-ydtz7-_EZp945I9MuK_nta6YZSYvpd/view?usp=sharing)
 
 ### 📂 Estrutura de Pastas do Repositório
 O repositório foi estruturado de forma lógica para separar a camada de orquestração, os schemas de banco de dados, os ativos de engenharia de prompt e os scripts:
