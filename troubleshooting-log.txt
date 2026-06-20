@@ -1,0 +1,62 @@
+# Evolution API - Troubleshooting Log
+
+## The Problem
+We are attempting to connect a WhatsApp number to the Evolution API container. The QR code is generated, but when the user scans it with their phone, WhatsApp displays an error: "Não foi possível conectar o dispositivo, tente novamente mais tarde." (Unable to connect device, try again later).
+
+## Attempts & Observations
+
+### 1. The "Base64 in Terminal" Issue
+- Outputting the raw Base64 string of the QR code directly in the CLI interface causes massive lag and takes too long to render, causing the QR code to expire before the user can scan it.
+- **Solution:** Save the Base64 string to a local file (`qrcode_base64.txt`) and provide a local HTML file (`show_qr.html`) so the user can open it in their browser and scan it instantly.
+
+### 2. Evolution API v2 Upgrade Attempt
+- Suspecting a bug in v1.8.2, we attempted to upgrade to v2.2.3.
+- **Result:** v2.2.3 requires strict database schema adherence and Redis caching. After resolving the Prisma migration issues and getting the server running, the `/instance/connect` endpoint consistently returned `{"count": 0}` instead of the QR code Base64.
+- **Conclusion:** As the user noted, we had previously downgraded from v2 precisely because of this issue. **Stick to v1.8.2.**
+
+### 3. Fixing the "Unable to Connect" Error in v1.8.2
+- The root cause of the phone rejecting the connection in v1.8.2 is almost always **corrupted session data** in the Baileys library (the underlying WhatsApp engine used by Evolution).
+- If an instance is deleted but its session files remain in the docker volume (`/evolution/instances`), the next time an instance is created with the same name, it tries to resume a broken session, resulting in the phone failing to connect.
+
+## Next Steps Action Plan (v1.8.2 Clean Slate)
+1. **Downgrade:** Revert `docker-compose.yml` to use `atendai/evolution-api:v1.8.2`.
+2. **Nuke State:** Run `docker-compose down` and explicitly run `docker volume rm n8n-deploy_evolution_instances`. This is critical.
+3. **Isolate:** Set `DATABASE_ENABLED=false` in the v1.8.2 config to isolate the issue entirely to the local file system session management, removing PostgreSQL from the equation temporarily.
+4. **Recreate & Fetch:** Create the instance `bot_buffet`, fetch the QR code, and update the local `qrcode_base64.txt` via script.
+
+### 4. The Persistent Device Connection Error
+- Even after a complete wipe of the Docker volumes and a fresh start of v1.8.2, the user's phone still returns "Não foi possível conectar o dispositivo, tente novamente mais tarde." when scanning the QR code.
+- **Root Cause Hypothesis:** The Baileys library (which powers the QR code/Web scraping method in Evolution API) is actively being blocked or is incompatible with the user's specific WhatsApp account state, app version, or Meta's anti-bot detection for that specific number. This is a known, ongoing cat-and-mouse game between Baileys and Meta.
+- **Solution Strategy:** Abandon the Baileys/QR Code method. Pivot to using the **WhatsApp Cloud API** (Meta's official API). Evolution API supports this natively. It requires the user to create a Meta App, but guarantees 100% connection stability and doesn't require a phone to be turned on or scanned.
+
+## Pivoting to WhatsApp Cloud API
+User agreed to pivot to the official WhatsApp Cloud API. This API is free for up to 1,000 service conversations per month, which is ideal for a testing/initial phase, and eliminates all QR code scanning issues.
+
+**Instructions for User:**
+1. Go to developers.facebook.com and create an app.
+2. Add the WhatsApp product.
+3. Provide the System User Token, Phone Number ID, and WhatsApp Business Account ID.
+
+## Resolution for Portfolio Demo
+The user clarified their goal: they only need the agent to work with ONE number (their own) to record a portfolio demonstration. The Meta Test Number is perfectly suited for this. We will proceed with the Cloud API using the test number.
+
+### 5. Meta Test Number Regional Block
+- The user attempted to send a test message using the Meta Graph API test number to their Brazilian (+55) number.
+- **Result:** Failed with error `130497: Business account is restricted from messaging users in this country.` Meta blocks test numbers (+1) from messaging Brazilian numbers without a verified business.
+- **Decision:** Abandoning Meta Cloud API test numbers. User suggested trying WPPConnect.
+
+### 6. Switching Engine to WPPConnect
+- We pivoted to creating an instance in Evolution API v1.8.2 that uses the `WHATSAPP-WPPCONNECT` engine, which uses a completely different web-scraping methodology and often bypasses Baileys-specific bans.
+
+### 7. Hard Block Confirmed
+- WPPConnect engine also failed with the exact same device connection error, even when using 4G on a different device.
+- **Conclusion:** Meta has placed a hard block/shadowban on either the user's device/number combinations or the IP address of the Oracle Cloud server hosting Evolution API due to repeated automated connection attempts.
+- **Dead End:** We cannot use QR codes to connect to this server today. The Meta Cloud API test number (+1) is blocked from sending to Brazil.
+
+### 8. Final Decision: Waiting out the Ban
+- **Action:** Pause all attempts to scan QR codes for this server.
+- **Resumption Plan:** Wait 48 hours (until June 12, 2026) for Meta's automated security cache to clear the ban on the device/server IP.
+- **Next steps upon resumption:** 1. Ensure the Evolution API is running cleanly on v1.8.2 (Baileys or WPPConnect).
+  2. Generate a fresh QR code.
+  3. Scan the QR code using a cellular network (4G/5G) to avoid local Wi-Fi IP caching issues.
+  4. The n8n workflow (`wa-agent-core`) is already configured with an IF node to restrict responses ONLY to the user's number, protecting the connected
