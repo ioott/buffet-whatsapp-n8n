@@ -1,0 +1,658 @@
+{
+  "name": "TOOL-CRM-and-Calculator",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"phone\": \"+5521[HIDDEN]\",\n  \"source\": \"Whatsapp\",\n  \"adults\": 50,\n  \"kids7to11\": 0,\n  \"kids4to6\": 0,\n  \"first_name\": \"Nome\",\n  \"last_name\": \"Sobrenome\",\n  \"birth_date\": \"1980-01-01\",\n  \"company_profession\": \"Engenheira\",\n  \"has_children\": true,\n  \"child_name\": \"Nome do Filho\",\n  \"child_birth_date\": \"2015-05-10\",\n  \"cpf\": \"11122233344\",\n  \"address\": \"Rua X, Tijuca\",\n  \"notes\": \"Observação extra\",\n  \"birthday_person_relationship\": \"filho\",\n  \"birthday_person_name\": \"Nome do Aniversariante\",\n  \"birthday_person_birth_date\": \"2015-05-10\",\n  \"birthday_person_company_profession\": null,\n  \"event_type\": \"festa infantil\",\n  \"menu\": \"Coquetel\",\n  \"event_date\": \"2026-10-20\",\n  \"neighborhood\": \"Tijuca\",\n  \"start_time\": \"18:00\",\n  \"venue_manager\": \"João\"\n}"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -176,
+        -64
+      ],
+      "id": "[HIDDEN]",
+      "name": "TRIGGER-Subflow"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * \nFROM clients \nLEFT JOIN event_quotes ON clients.phone = event_quotes.client_phone \nWHERE clients.phone = '{{ $json.phone }}' \nORDER BY event_quotes.id DESC \nLIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        32,
+        -64
+      ],
+      "id": "[HIDDEN]",
+      "name": "DB-Get-Client-Profile",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "[HIDDEN]",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('TRIGGER-Subflow').first().json;\nconst dbData = $('DB-Get-Client-Profile').first()?.json || {};\n\n// 0. AI HALLUCINATION CLEANUP & DATE FORMATTER\nfor (let key in input) {\n    if (typeof input[key] === 'string') {\n        let value = input[key].trim();\n        let lowerValue = value.toLowerCase();\n        \n        // Expanded AI hallucination filters\n        const invalidTerms = [\"client\", \"cliente\", \"não informado\", \"nao informado\", \"nenhuma.\", \"nenhuma\"];\n        \n        // Checks if the string contains column names or schema garbage.\n        if (invalidTerms.includes(lowerValue) || \n            value.includes(\"1900\") || \n            value.includes(\"1990\") || \n            value === \"19:00\" || \n            value === \"00000000000\" || \n            value.startsWith(\",\") ||\n            value.includes(\"company_profession\") || \n            value.includes(\"event_date:\")) {\n            input[key] = \"\";\n        }\n        \n        // Prevents automatic assignment to the buffet manager.\n        if (key === \"venue_manager\" && lowerValue === \"vania\") {\n            input[key] = \"\";\n        }\n\n        // Corrects DD/MM/YYYY to YYYY-MM-DD\n        if (input[key] && input[key].match(/^\\d{2}\\/\\d{2}\\/\\d{4}$/)) {\n            let [day, month, year] = input[key].split('/');\n            input[key] = `${year}-${month}-${day}`;\n        }\n    }\n}\n\n// 1 e 2. Synchronization with database data\nfor (let key in input) {\n  if ((input[key] === \"\" || input[key] === null || input[key] === undefined) && dbData[key] !== null && dbData[key] !== undefined) {\n    input[key] = dbData[key];\n  }\n  \n  if (input[key] === \"\") {\n    input[key] = null;\n  }\n}\n\n// 1. Extraction of quantities\nlet qtyAdults = Number(input.adults) || 0;\nlet qtyKids7to11 = Number(input.kids7to11) || 0;\nlet qtyKids4to6 = Number(input.kids4to6) || 0;\n\n// 2. Blocking rule (< 30 adults)\nif (qtyAdults < 30) {\n    return {\n        ...input,\n        status: \"MANUAL_ANALYSIS\",\n        stopHandling: true,\n        notes: \"< 30\"\n    };\n}\n\n// 3. Courtesy rules and paying customers\nlet allowedCourtesies = Math.floor(qtyAdults * 0.15); \nlet exceedingKids = Math.max(0, qtyKids4to6 - allowedCourtesies);\nlet totalHalfPayers = qtyKids7to11 + exceedingKids;\nlet totalEquivalentPayers = qtyAdults + (totalHalfPayers / 2);\n\n// 4. Cost rule\nlet baseCost = qtyAdults >= 60 ? 85.00 : 90.00;\nlet totalCost = (qtyAdults * baseCost) + (totalHalfPayers * (baseCost / 2));\n\n// 5. Profit and Target Price\nlet minimumProfit = 1000.00;\nlet totalTargetValue = totalCost + minimumProfit;\n\nlet exactFullPrice = totalTargetValue / totalEquivalentPayers;\nlet exactHalfPrice = exactFullPrice / 2;\n\n// 6. Rounding function (.90)\nfunction roundPrice(value) {\n    return Math.ceil((value - 4.90) / 5) * 5 + 4.90;\n}\n\nlet fullPayerPrice = roundPrice(exactFullPrice);\nlet halfPayerPrice = roundPrice(exactHalfPrice);\n\n// 7. Final calculation\nlet totalEventPrice = (qtyAdults * fullPayerPrice) + (totalHalfPayers * halfPayerPrice);\nlet estimatedProfit = totalEventPrice - totalCost;\n\n// 8. Final return (Column mapping)\nreturn {\n    ...input,\n    status: \"Quote sent\",\n    stopHandling: false,\n    qty12PlusYears: qtyAdults,\n    qty7To11Years: qtyKids7to11,\n    qty4To6Years: qtyKids4to6,\n    totalCost: parseFloat(totalCost.toFixed(2)),\n    fullPayerPrice: parseFloat(fullPayerPrice.toFixed(2)),\n    halfPayerPrice: parseFloat(halfPayerPrice.toFixed(2)),\n    totalEventPrice: parseFloat(totalEventPrice.toFixed(2)),\n    profit: parseFloat(estimatedProfit.toFixed(2))\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        -64
+      ],
+      "id": "[HIDDEN]",
+      "name": "JS-Calculate-Event-Budget"
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "clients",
+          "mode": "list",
+          "cachedResultName": "clients"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "has_children": "={{ $json.has_children }}",
+            "phone": "={{ $json.phone }}",
+            "first_name": "={{ $json.first_name }}",
+            "last_name": "={{ $json.last_name }}",
+            "birth_date": "={{ $json.birth_date }}",
+            "company_profession": "={{ $json.company_profession }}",
+            "child_name": "={{ $json.child_name }}",
+            "child_birth_date": "={{ $json.child_birth_date }}",
+            "cpf": "={{ $json.cpf }}",
+            "notes": "={{ $json.notes }}",
+            "address": "={{ $json.address }}",
+            "source": "={{ $json.source }}"
+          },
+          "matchingColumns": [
+            "phone"
+          ],
+          "schema": [
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "first_name",
+              "displayName": "first_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "last_name",
+              "displayName": "last_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "birth_date",
+              "displayName": "birth_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "company_profession",
+              "displayName": "company_profession",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "has_children",
+              "displayName": "has_children",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "child_name",
+              "displayName": "child_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "child_birth_date",
+              "displayName": "child_birth_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "cpf",
+              "displayName": "cpf",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "address",
+              "displayName": "address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false,
+              "removed": false
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        416,
+        -64
+      ],
+      "id": "[HIDDEN]",
+      "name": "DB-Upsert-Client",
+      "credentials": {
+        "postgres": {
+          "id": "[HIDDEN]",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "event_quotes",
+          "mode": "list",
+          "cachedResultName": "event_quotes"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "={{ $('JS-Calculate-Event-Budget').item.json.status }}",
+            "qty_4_to_6_years": "={{ $('JS-Calculate-Event-Budget').item.json.qty4To6Years }}",
+            "qty_7_to_11_years": "={{ $('JS-Calculate-Event-Budget').item.json.qty7To11Years }}",
+            "qty_12_plus_years": "={{ $('JS-Calculate-Event-Budget').item.json.qty12PlusYears }}",
+            "total_cost": "={{ $('JS-Calculate-Event-Budget').item.json.totalCost }}",
+            "full_payer": "={{ $('JS-Calculate-Event-Budget').item.json.fullPayerPrice }}",
+            "half_payer": "={{ $('JS-Calculate-Event-Budget').item.json.halfPayerPrice }}",
+            "profit": "={{ $('JS-Calculate-Event-Budget').item.json.profit }}",
+            "total_event_price": "={{ $('JS-Calculate-Event-Budget').item.json.totalEventPrice }}",
+            "client_phone": "={{ $('DB-Upsert-Client').item.json.phone }}",
+            "birthday_person_relationship": "={{ $('JS-Calculate-Event-Budget').item.json.birthday_person_relationship }}",
+            "birthday_person_name": "={{ $('JS-Calculate-Event-Budget').item.json.birthday_person_name }}",
+            "birthday_person_birth_date": "={{ $('JS-Calculate-Event-Budget').item.json.birthday_person_birth_date }}",
+            "birthday_person_company_profession": "={{ $('JS-Calculate-Event-Budget').item.json.birthday_person_company_profession }}",
+            "event_type": "={{ $('JS-Calculate-Event-Budget').item.json.event_type }}",
+            "menu": "={{ $('JS-Calculate-Event-Budget').item.json.menu }}",
+            "event_date": "={{ $json.event_date }}",
+            "neighborhood": "={{ $('JS-Calculate-Event-Budget').item.json.neighborhood }}",
+            "start_time": "={{ $('JS-Calculate-Event-Budget').item.json.start_time }}",
+            "venue_manager": "={{ $('JS-Calculate-Event-Budget').item.json.venue_manager }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "client_phone",
+              "displayName": "client_phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "birthday_person_relationship",
+              "displayName": "birthday_person_relationship",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "birthday_person_name",
+              "displayName": "birthday_person_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "birthday_person_birth_date",
+              "displayName": "birthday_person_birth_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "birthday_person_company_profession",
+              "displayName": "birthday_person_company_profession",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "quote_date",
+              "displayName": "quote_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message_control",
+              "displayName": "message_control",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "lost_reason",
+              "displayName": "lost_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "event_type",
+              "displayName": "event_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "menu",
+              "displayName": "menu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "event_date",
+              "displayName": "event_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "neighborhood",
+              "displayName": "neighborhood",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "start_time",
+              "displayName": "start_time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "time",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "venue_manager",
+              "displayName": "venue_manager",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "qty_4_to_6_years",
+              "displayName": "qty_4_to_6_years",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "qty_7_to_11_years",
+              "displayName": "qty_7_to_11_years",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "qty_12_plus_years",
+              "displayName": "qty_12_plus_years",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "total_cost",
+              "displayName": "total_cost",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "full_payer",
+              "displayName": "full_payer",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "half_payer",
+              "displayName": "half_payer",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "profit",
+              "displayName": "profit",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "total_event_price",
+              "displayName": "total_event_price",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "outputColumns": [
+            "full_payer",
+            "half_payer"
+          ],
+          "skipOnConflict": true
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        832,
+        -64
+      ],
+      "id": "[HIDDEN]",
+      "name": "DB-Insert-Quote",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "[HIDDEN]",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const monthMap = {\n  'janeiro': '01', 'fevereiro': '02', 'março': '03', 'abril': '04',\n  'maio': '05', 'junho': '06', 'julho': '07', 'agosto': '08',\n  'setembro': '09', 'outubro': '10', 'novembro': '11', 'dezembro': '12'\n};\n\nlet inputDate = $('JS-Calculate-Event-Budget').item.json.event_date;\n\nif (typeof inputDate === 'string') {\n  const lowerDate = inputDate.toLowerCase();\n  \n  // Procura pelo nome do mês dentro da string (ex: \"Agosto/2026\")\n  for (let month in monthMap) {\n    if (lowerDate.includes(month)) {\n      // Extrai o ano se houver 4 dígitos, senão usa 2026 como padrão\n      const yearMatch = lowerDate.match(/\\d{4}/);\n      const year = yearMatch ? yearMatch[0] : '2026';\n      \n      inputDate = `${year}-${monthMap[month]}-01`;\n      break;\n    }\n  }\n}\n\nreturn { event_date: inputDate };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        -64
+      ],
+      "id": "[HIDDEN]",
+      "name": "JS-Format-Event-Date-Insert"
+    }
+  ],
+  "pinData": {
+    "TRIGGER-Subflow": [
+      {
+        "json": {
+          "phone": 8457751771,
+          "source": null,
+          "adults": 80,
+          "kids7to11": 0,
+          "kids4to6": 0,
+          "first_name": "Vania",
+          "last_name": "",
+          "birth_date": "",
+          "company_profession": "",
+          "has_children": false,
+          "child_name": "",
+          "child_birth_date": "",
+          "cpf": "",
+          "address": "",
+          "notes": "",
+          "birthday_person_relationship": "",
+          "birthday_person_name": "",
+          "birthday_person_birth_date": "",
+          "birthday_person_company_profession": "",
+          "event_type": "casamento",
+          "menu": "Churrasco",
+          "event_date": "agosto",
+          "neighborhood": "Barra",
+          "start_time": "",
+          "venue_manager": ""
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "TRIGGER-Subflow": {
+      "main": [
+        [
+          {
+            "node": "DB-Get-Client-Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB-Get-Client-Profile": {
+      "main": [
+        [
+          {
+            "node": "JS-Calculate-Event-Budget",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JS-Calculate-Event-Budget": {
+      "main": [
+        [
+          {
+            "node": "DB-Upsert-Client",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB-Upsert-Client": {
+      "main": [
+        [
+          {
+            "node": "JS-Format-Event-Date-Insert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JS-Format-Event-Date-Insert": {
+      "main": [
+        [
+          {
+            "node": "DB-Insert-Quote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "[HIDDEN]",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "[HIDDEN]"
+  },
+  "nodeGroups": [],
+  "id": "[HIDDEN]",
+  "tags": []
+}

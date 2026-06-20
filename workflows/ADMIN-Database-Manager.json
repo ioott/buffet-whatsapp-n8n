@@ -1,0 +1,89 @@
+{
+  "name": "ADMIN-Database-Manager",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DROP TABLE IF EXISTS orcamentos_eventos;\nDROP TABLE IF EXISTS clientes;\nDROP TABLE IF EXISTS event_quotes;\nDROP TABLE IF EXISTS clients;\n\n-- 1. CLIENTS TABLE\nCREATE TABLE clients (\n    phone VARCHAR(20) PRIMARY KEY,\n    source VARCHAR(50),\n    first_name VARCHAR(150),\n    last_name VARCHAR(150),\n    birth_date DATE,\n    company_profession VARCHAR(150),\n    has_children BOOLEAN DEFAULT FALSE,\n    child_name VARCHAR(150),\n    child_birth_date DATE,\n    cpf VARCHAR(20),\n    address TEXT,\n    notes TEXT\n);\n\n-- 2. EVENT QUOTES TABLE\nCREATE TABLE event_quotes (\n    id SERIAL PRIMARY KEY,\n    client_phone VARCHAR(20) REFERENCES clients(phone) ON DELETE CASCADE,\n    \n    -- Birthday Person (Nullables for events without one)\n    birthday_person_relationship VARCHAR(20) NULL, \n    birthday_person_name VARCHAR(150) NULL,\n    birthday_person_birth_date DATE NULL,\n    birthday_person_company_profession VARCHAR(150) NULL,\n    \n    -- CRM\n    quote_date DATE DEFAULT CURRENT_DATE,\n    status VARCHAR(50),\n    message_control VARCHAR(50),\n    lost_reason TEXT,\n    \n    -- Event Data\n    event_type VARCHAR(50),\n    menu VARCHAR(100),\n    event_date DATE,\n    neighborhood VARCHAR(150),\n    start_time TIME, \n    venue_manager VARCHAR(150),\n    \n    -- Quantities\n    qty_4_to_6_years INTEGER DEFAULT 0,\n    qty_7_to_11_years INTEGER DEFAULT 0,\n    qty_12_plus_years INTEGER DEFAULT 0,\n    \n    -- Financials\n    total_cost NUMERIC(10, 2) DEFAULT 0.00,\n    full_payer NUMERIC(10, 2) DEFAULT 0.00,\n    half_payer NUMERIC(10, 2) DEFAULT 0.00,\n    profit NUMERIC(10, 2) DEFAULT 0.00,\n    total_event_price NUMERIC(10, 2) DEFAULT 0.00\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -144,
+        48
+      ],
+      "id": "[HIDDEN]",
+      "name": "DB-Build-Tables",
+      "credentials": {
+        "postgres": {
+          "id": "[HIDDEN]",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT *\nFROM clients\nLEFT JOIN event_quotes ON clients.phone = event_quotes.client_phone;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        48
+      ],
+      "id": "[HIDDEN]",
+      "name": "DB-Consult-Tables",
+      "credentials": {
+        "postgres": {
+          "id": "[HIDDEN]",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Remove all data from both tables and reset the ID sequences\n-- CASCADE ensures that dependent records in event_quotes are cleared\nTRUNCATE TABLE event_quotes, clients RESTART IDENTITY CASCADE;\n\n-- Query the tables to confirm they are empty\n-- Returns the row count for each table to verify the deletion\nSELECT 'event_quotes' AS table_name, COUNT(*) AS row_count FROM event_quotes\nUNION ALL\nSELECT 'clients' AS table_name, COUNT(*) AS row_count FROM clients;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        560,
+        48
+      ],
+      "id": "[HIDDEN]",
+      "name": "DB-Drop-Tables",
+      "credentials": {
+        "postgres": {
+          "id": "[HIDDEN]",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "DB-Build-Tables": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "[HIDDEN]",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "[HIDDEN]"
+  },
+  "nodeGroups": [],
+  "id": "[HIDDEN]",
+  "tags": []
+}

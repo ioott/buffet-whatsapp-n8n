@@ -1,0 +1,196 @@
+{
+  "name": "CRON-Follow-Up-Routine",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 10
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "[HIDDEN]",
+      "name": "CRON-Daily-Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n    c.phone, \n    c.first_name, \n    e.id AS quote_id,\n    e.quote_date,\n    ((CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - e.quote_date) AS days_waiting\nFROM event_quotes e\nJOIN clients c ON e.client_phone = c.phone\nWHERE e.status = 'Quote sent' \nAND (\n    e.quote_date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - 2 \n    OR \n    e.quote_date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - 10\n);",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        0
+      ],
+      "id": "[HIDDEN]",
+      "name": "DB-Get-Pending-Quotes",
+      "credentials": {
+        "postgres": {
+          "id": "[HIDDEN]",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.days_waiting }}",
+                    "rightValue": 2,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    },
+                    "id": "[HIDDEN]"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "[HIDDEN]",
+                    "leftValue": "={{ $json.days_waiting }}",
+                    "rightValue": 10,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        416,
+        0
+      ],
+      "id": "[HIDDEN]",
+      "name": "SWITCH-Days-Elapsed"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        624,
+        -96
+      ],
+      "id": "[HIDDEN]",
+      "name": "POST-WhatsApp-FollowUp-2d"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        624,
+        96
+      ],
+      "id": "[HIDDEN]",
+      "name": "POST-WhatsApp-FollowUp-10d"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "CRON-Daily-Trigger": {
+      "main": [
+        [
+          {
+            "node": "DB-Get-Pending-Quotes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB-Get-Pending-Quotes": {
+      "main": [
+        [
+          {
+            "node": "SWITCH-Days-Elapsed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SWITCH-Days-Elapsed": {
+      "main": [
+        [
+          {
+            "node": "POST-WhatsApp-FollowUp-2d",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "POST-WhatsApp-FollowUp-10d",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "[HIDDEN]",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "[HIDDEN]"
+  },
+  "nodeGroups": [],
+  "id": "[HIDDEN]",
+  "tags": []
+}

@@ -1,0 +1,578 @@
+{
+  "name": "SYS-Telegram-Agent-Core",
+  "nodes": [
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.body.message }}",
+        "options": {
+          "systemMessage": "=Today's date is: {{ $now.setZone('America/Sao_Paulo').format('dd/MM/yyyy') }}.\nThe exact phone number of the client is: {{ $json.body.phone }}.\n\nYOUR ROLE AND IDENTITY:\nYou are the Premium Sales Assistant for \"Cheirinho de Festa Buffet\", focusing on high-end clients in RJ and Niterói. ALWAYS write in the FIRST PERSON (I/we). NEVER pretend to be Vania (the owner), NEVER say you are an Artificial Intelligence.\nTone of voice: Welcoming, sophisticated, direct, and confident.\nTone rule: Be natural. Do not use artificial flattery, do not show excessive euphoria, and do not use cheap party terms (use \"investment\", \"experience\", \"abundance\").\n\nSTRICT RULES FOR TOOL USAGE:\n\nDO NOT INVENT DATA: If the client did not explicitly provide a piece of information, leave the field EMPTY (null). NEVER assume it's a \"birthday\". NEVER assume whether the person has children or not.\n\nDO NOT INVENT PRICES: It is STRICTLY FORBIDDEN to generate financial values on your own. You MUST call the `calculate_budget` tool, wait for the response, and use ONLY the returned values (`full_payer`, `half_payer`, `total_event_price`).\n\nSCHEMA ENFORCEMENT RULE:\nYou must strictly respect the data schema.\nNEVER put professional titles or notes in the child_name or first_name fields.\nNEVER put dates in the cpf field.\nIf the user provides a month (like \"agosto\") for the event, place it EXACTLY in the event_date field.\nIf you cannot determine the exact value for a specific field based on the user's input, you MUST send null or leave it empty. DO NOT fill a field with data that belongs to another category.\n\nREGISTRATION/UPDATE RULE (DO NOT DUPLICATE CLIENTS): Your function when using the database tool is to SAVE data, which will create a new client or update an existing one. To ensure the system checks correctly and doesn't duplicate clients, you MUST always send the exact phone number from the variable {{ $json.body.phone }}. Never modify, format, or alter this number when sending it to the tool.\n\nSERVICE CYCLE (THINK > ACT > OBSERVE > RESPOND):\nFor every message received, you MUST follow the sequence of operations below:\n\nSTEP 1: INITIAL VERIFICATION (Mandatory Action on the 1st message)\n\nThought: \"I need to know who this client is and if the service is blocked.\"\n\nAction: Use the database tool to search for the client's phone number (use the exact variable {{ $json.body.phone }}).\n\nObservation:\n* If the notes or status indicates \"Stop handling\" or \"Parar atendimento\": SILENTLY TERMINATE the execution immediately. Do not generate any response to the client.\n* If the phone field contains letters or names: Your first response must politely ask for the number with the area code (DDD), without explaining the registry error.\n* If the Name is empty: Your first response must ask for the client's name, just the first name. You should only ask for the full name if they say they want to sign a contract.\n* If the name exists: Proceed with the service by calling them by their name.\n\nSTEP 2: INFORMATION QUERY (Conditional Action)\n\nThought: \"The client asked a question about the buffet, menu, or packages.\"\n\nAction: Use the Pinecone Vector Store tool to search for the question or menu items AND explicitly search for \"Incluídos em todos os cardápios\".\n\nObservation: Base your response ONLY on the data returned by the tool. If the tool does not return the answer, say: \"Eu não sei te responder, vou chamar a Vania para falar com você. Um instante.\" and update the database notes to \"Stop handling\".\n\nSTEP 3: BUDGET COLLECTION (Business Rules)\n\nThought: \"I need 4 pieces of data to calculate the budget: 1. Date/Month, 2. Neighborhood/Location, 3. Number of Guests, 4. Menu.\"\n\nGuest Rule: If it's a Children's Party and the client only gives the total number, ask for the breakdown: \"Dessa estimativa, tem ideia de quantos seriam adultos, crianças de 7 a 11 anos e crianças até 6 anos? Temos valores diferenciados.\" If the client doesn't know, put the total in the \"12+ years\" category.\n\nConditional Guest Quantity Rule: If the number of guests over 11 years old is LESS than 30, stop responding, update the database notes to \"Stop handling\". DO NOT RESPOND WITH ANYTHING ELSE.\n\nDate Rule: Do not block the quote due to a lack of an exact date or location. If they don't know, move forward.\n\nSTEP 4: BUDGET CALCULATION (Strict Conditional Action)\n\nThought: \"I already have the guest quantities and the chosen menu. I cannot calculate mentally.\"\n\nAction: Call the `calculate_budget` tool IMMEDIATELY passing the collected data.\n\nObservation: Wait for the returned values. NEVER say you are going to \"prepare\" or \"calculate\". Go straight to delivering the result using the GOLDEN OUTPUT RULE.\nIf the tool returns `stop_handling: true`, say: \"Como o seu evento tem menos de 30 convidados adultos, vou repassar seu atendimento para a Vania analisar com carinho. Ela já fala com você!\" and end the interaction.\n\nEMERGENCY TRIGGERS:\n\nIf the client types #parar (or variations) or asks to \"speak with a human/Vania\":\nAction: Update the database note to \"Stop handling\".\nResponse: \"Com certeza! Vou passar o seu contato para a Vania e ela fala com você logo em seguida.\"\n\nIf the client types #retomar (or variations):\nAction: Clear the \"Stop handling\" note in the database.\nResponse: Resume the service informing them you are back.\n\nGOLDEN OUTPUT RULE (STRICT FORMATTING):\nDeliver ONLY the final text of the message. NEVER include \"Here is the message:\" or AI introductions.\nNEVER round or modify the values returned by the `calculate_budget` tool.\n\nMULTIPLE MENUS RULE: If the client requests quotes for more than one menu, you MUST present each menu completely separately. Repeat the entire bullet point structure below for each requested menu. NEVER merge, combine, or mix items from different menus into a single list.\n\nWhen presenting a budget, STRICTLY obey this bullet point structure, merging the \"STANDARDS FOR ALL MENUS\" and \"INCLUDED IN ALL MENUS\" sections into the chosen menu:\n\n🍽️ [Nome do Cardápio]\n[Descrição curta]\n\n[Categoria do item principal]:\n- [Item]\n- [Item]\n\nMini refeições (escolher 2 opções entre):\n- [Item]\n\nDoces:\n- [Item]\n\nBebidas não-alcoólicas:\n- [Item]\n\n- event_type (string): The reason for the celebration (e.g., \"aniversário infantil\", \"casamento\"). DO NOT put the menu name here (like \"Coquetel\"). If the reason is not explicitly stated, send \"\".\n\nPara [QUANTIDADE TOTAL DE CONVIDADOS] convidados:\n\nMenores de 4 anos:\n- Cortesia\n\nDe 4 a 6 anos:\n- Cortesia (Limitado a 15% do total de pagantes 12+)\n\nDe 7 a 11 anos (e excedentes da cortesia de 4 a 6):\n- R$ [EXACT VALUE FROM half_payer] / pessoa\n\nAcima de 11 anos:\n- R$ [EXACT VALUE FROM full_payer] / pessoa\n\nFinal Conditional Rule: If the total sum of guests is LESS THAN OR EQUAL TO 50, you must add this exact phrase in italics, isolated at the end of the message:\n*Nossos valores por pessoa diminuem conforme aumenta a quantidade de convidados.*\n\nCRITICAL RULE FOR BUDGETS: Base them STRICTLY on the documents in your knowledge base. NEVER invent, assume, or add items, services, or structures (such as \"complete furniture\") that are not explicitly written in the retrieved documents. What is not in the text is not part of the package."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        240,
+        -304
+      ],
+      "id": "[HIDDEN]",
+      "name": "AI-Sales-Agent",
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.body.phone }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        336,
+        48
+      ],
+      "id": "[HIDDEN]",
+      "name": "MEM-Conversation-History"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -128
+      ],
+      "id": "[HIDDEN]",
+      "name": "LLM-Gemini",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "[HIDDEN]",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "MANDATORY TOOL FOR PRICING. You MUST call this tool ALWAYS when the user asks for a quote, price, or budget. DO NOT calculate prices mentally. DO NOT invent values. If the tool does not return exact numerical values, reply ONLY: \"Tive um problema técnico ao calcular seu orçamento, vou chamar a Vania para te ajudar.\"\n\nCRITICAL BEHAVIOR: DO NOT ask the user for optional data (like birth date, profession, CPF, address, etc.). NEVER interrogate the client about these fields. If the user doesn't provide them spontaneously, just send \"\". You ONLY need the guest quantities to run this tool. Run it IMMEDIATELY as soon as you know the number of guests.\n\nMANDATORY Parameters (always send):\n- phone (string): Client's WhatsApp number\n- adults (number): Quantity of guests 12 years old or older\n\nOPTIONAL Parameters:\nIf the client DID NOT explicitly type this exact information in the current chat, you MUST send exactly \"\" (empty string). DO NOT guess. DO NOT write \"Não informado\", \"Nenhuma\", \"00000000000\", or use default dates like \"1900-01-01\".\n- first_name (string): Client's first name\n- last_name (string): Client's last name\n- birth_date (string)\n- company_profession (string)\n- has_children (boolean)\n- child_name (string)\n- child_birth_date (string)\n- cpf (string)\n- address (string)\n- notes (string)\n- birthday_person_relationship (string)\n- birthday_person_name (string)\n- birthday_person_birth_date (string)\n- birthday_person_company_profession (string)\n- event_type (string): The reason for the celebration (e.g., \"aniversário infantil\", \"casamento\"). DO NOT put the menu name here (like \"Coquetel\"). If the reason is not explicitly stated, send \"\".\n- menu (string): Chosen menu\n- event_date (string)\n- neighborhood (string)\n- start_time (string)\n- venue_manager (string)\n- kids7to11 (number): Quantity of children between 7 and 11 years old\n- kids4to6 (number): Quantity of children between 4 and 6 years old",
+        "workflowId": {
+          "__rl": true,
+          "value": "[HIDDEN]",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/[HIDDEN]",
+          "cachedResultName": "TOOL-CRM-and-Calculator"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "has_children": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('has_children', ``, 'boolean') }}",
+            "adults": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('adults', ``, 'number') }}",
+            "kids7to11": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('kids7to11', ``, 'number') }}",
+            "kids4to6": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('kids4to6', ``, 'number') }}",
+            "phone": "={{ $('Telegram Trigger').item.json.message.from.id }}",
+            "first_name": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('first_name', ``, 'string') }}",
+            "last_name": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('last_name', ``, 'string') }}",
+            "birth_date": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('birth_date', ``, 'string') }}",
+            "company_profession": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('company_profession', ``, 'string') }}",
+            "child_name": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('child_name', ``, 'string') }}",
+            "child_birth_date": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('child_birth_date', ``, 'string') }}",
+            "cpf": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('cpf', ``, 'string') }}",
+            "address": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('address', ``, 'string') }}",
+            "notes": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('notes', ``, 'string') }}",
+            "birthday_person_relationship": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('birthday_person_relationship', ``, 'string') }}",
+            "birthday_person_name": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('birthday_person_name', ``, 'string') }}",
+            "birthday_person_birth_date": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('birthday_person_birth_date', ``, 'string') }}",
+            "birthday_person_company_profession": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('birthday_person_company_profession', ``, 'string') }}",
+            "event_type": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('event_type', ``, 'string') }}",
+            "menu": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('menu', ``, 'string') }}",
+            "event_date": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('event_date', ``, 'string') }}",
+            "neighborhood": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('neighborhood', ``, 'string') }}",
+            "start_time": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('start_time', ``, 'string') }}",
+            "venue_manager": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('venue_manager', ``, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "adults",
+              "displayName": "adults",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "kids7to11",
+              "displayName": "kids7to11",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "kids4to6",
+              "displayName": "kids4to6",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number"
+            },
+            {
+              "id": "first_name",
+              "displayName": "first_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "last_name",
+              "displayName": "last_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "birth_date",
+              "displayName": "birth_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "company_profession",
+              "displayName": "company_profession",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "has_children",
+              "displayName": "has_children",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "boolean"
+            },
+            {
+              "id": "child_name",
+              "displayName": "child_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "child_birth_date",
+              "displayName": "child_birth_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "cpf",
+              "displayName": "cpf",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "address",
+              "displayName": "address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "birthday_person_relationship",
+              "displayName": "birthday_person_relationship",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "birthday_person_name",
+              "displayName": "birthday_person_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "birthday_person_birth_date",
+              "displayName": "birthday_person_birth_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "birthday_person_company_profession",
+              "displayName": "birthday_person_company_profession",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "event_type",
+              "displayName": "event_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "menu",
+              "displayName": "menu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "event_date",
+              "displayName": "event_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "neighborhood",
+              "displayName": "neighborhood",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "start_time",
+              "displayName": "start_time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "venue_manager",
+              "displayName": "venue_manager",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        400,
+        -128
+      ],
+      "id": "[HIDDEN]",
+      "name": "TOOL-Calculate-Budget"
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Use esta ferramenta para buscar informações sobre os cardápios, pacotes de festas, preços e também para responder a dúvidas frequentes (FAQ) e regras do buffet.",
+        "pineconeIndex": {
+          "__rl": true,
+          "value": "base-buffet",
+          "mode": "list",
+          "cachedResultName": "base-buffet"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+      "typeVersion": 1.3,
+      "position": [
+        544,
+        -128
+      ],
+      "id": "[HIDDEN]",
+      "name": "TOOL-Search-Menu-Rules",
+      "credentials": {
+        "pineconeApi": {
+          "id": "[HIDDEN]",
+          "name": "Pinecone account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        544,
+        48
+      ],
+      "id": "[HIDDEN]",
+      "name": "AI-Gemini-Embeddings",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "[HIDDEN]",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ JSON.stringify({ reply: \"Ops! Nosso sistema de orçamentos teve uma pequena instabilidade técnica agora. Mas a Vania já foi notificada e vai assumir o seu atendimento por aqui em poucos minutos para te passar todas as informações!\" }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        592,
+        -288
+      ],
+      "id": "[HIDDEN]",
+      "name": "SYS-Respond-Error",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -176,
+        -304
+      ],
+      "id": "[HIDDEN]",
+      "name": "Telegram Trigger",
+      "webhookId": "[HIDDEN]",
+      "credentials": {
+        "telegramApi": {
+          "id": "[HIDDEN]",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.output }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        592,
+        -480
+      ],
+      "id": "[HIDDEN]",
+      "name": "Send a text message",
+      "webhookId": "[HIDDEN]",
+      "credentials": {
+        "telegramApi": {
+          "id": "[HIDDEN]",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "[HIDDEN]",
+              "name": "body.message",
+              "value": "={{ $json.message.text }}",
+              "type": "string"
+            },
+            {
+              "id": "[HIDDEN]",
+              "name": "body.phone",
+              "value": "={{ $json.message.from.id }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        32,
+        -304
+      ],
+      "id": "[HIDDEN]",
+      "name": "SET-Final-Payload"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "AI-Sales-Agent": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SYS-Respond-Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MEM-Conversation-History": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI-Sales-Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM-Gemini": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI-Sales-Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TOOL-Calculate-Budget": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI-Sales-Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TOOL-Search-Menu-Rules": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI-Sales-Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI-Gemini-Embeddings": {
+      "ai_embedding": [
+        [
+          {
+            "node": "TOOL-Search-Menu-Rules",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "SET-Final-Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SET-Final-Payload": {
+      "main": [
+        [
+          {
+            "node": "AI-Sales-Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "[HIDDEN]",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "[HIDDEN]",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "[HIDDEN]"
+  },
+  "nodeGroups": [],
+  "id": "[HIDDEN]",
+  "tags": []
+}
