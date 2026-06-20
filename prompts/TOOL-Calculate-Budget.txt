@@ -1,0 +1,32 @@
+MANDATORY TOOL FOR PRICING. You MUST call this tool ALWAYS when the user asks for a quote, price, or budget. DO NOT calculate prices mentally. DO NOT invent values. If the tool does not return exact numerical values, reply ONLY: "Tive um problema técnico ao calcular seu orçamento, vou chamar a Vania para te ajudar."
+
+CRITICAL BEHAVIOR: DO NOT ask the user for optional data (like birth date, profession, CPF, address, etc.). NEVER interrogate the client about these fields. If the user doesn't provide them spontaneously, just send "". You ONLY need the guest quantities to run this tool. Run it IMMEDIATELY as soon as you know the number of guests.
+
+MANDATORY Parameters (always send):
+- phone (string): Client's WhatsApp number
+- adults (number): Quantity of guests 12 years old or older
+
+OPTIONAL Parameters:
+If the client DID NOT explicitly type this exact information in the current chat, you MUST send exactly "" (empty string). DO NOT guess. DO NOT write "Não informado", "Nenhuma", "00000000000", or use default dates like "1900-01-01".
+- first_name (string): Client's first name
+- last_name (string): Client's last name
+- birth_date (string)
+- company_profession (string)
+- has_children (boolean)
+- child_name (string)
+- child_birth_date (string)
+- cpf (string)
+- address (string)
+- notes (string)
+- birthday_person_relationship (string)
+- birthday_person_name (string)
+- birthday_person_birth_date (string)
+- birthday_person_company_profession (string)
+- event_type (string): The reason for the celebration (e.g., "aniversário infantil", "casamento"). DO NOT put the menu name here (like "Coquetel"). If the reason is not explicitly stated, send "".
+- menu (string): Chosen menu
+- event_date (string)
+- neighborhood (string)
+- start_time (string)
+- venue_manager (string)
+- kids7to11 (number): Quantity of children between 7 and 11 years old
+- kids4to6 (number): Quantity of children between 4 and 6 years old
